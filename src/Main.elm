@@ -1,9 +1,7 @@
 module Main exposing (main)
 
 import Browser exposing (Document)
-import Dict exposing (get)
 import Html exposing (Html, img, div, text, p, a)
--- import Html.Attributes exposing (href, src, width, height, style)
 import Html.Attributes as Attr
 import Html.Events
 import Http
@@ -17,18 +15,13 @@ import Tuple exposing (pair, first, second)
 import Yaml.Decode exposing (fromString, list, dict, string, field)
 import Markdown.Parser as Markdown
 import Markdown.Renderer
+import Color exposing (toCssString, rgb255)
 
-overhead = 7
+variance = 20
 
-type alias Link        = String
-type alias Icon        = String
-type alias Description = String
+type Msg = YamlLoaded (Result Http.Error String) | MarkdownLoaded (Result Http.Error String) | RandomColour {r: Int, g: Int, b: Int} | None
 
-type Msg = YamlLoaded (Result Http.Error String) | MarkdownLoaded (Result Http.Error String) | None
-
-type alias Model = { post: String, post_addr: String, email: List String }
-
-tuple_extractor a b = \v -> (withDefault "" <| get a v, withDefault "" <| get b v)
+type alias Model = { post: String, post_addr: String, email: List String, colour: {r: Int, g: Int, b: Int} }
 
 decoder : Model -> Yaml.Decode.Decoder Model
 decoder model =
@@ -41,11 +34,17 @@ main =
 subscriptions : Model -> Sub Msg
 subscriptions model = Sub.none
 
+cap_value: Int -> Int
+cap_value = (min 255) >> (max 0)
+
+colour_gen = Random.map3 (\r g b -> {r = r, g = g, b = b}) (Random.int -variance variance) (Random.int -variance variance) (Random.int -variance variance)
+
 init : () -> (Model, Cmd Msg)
 init _ =
   let
-    initialState = { post = "", post_addr = "", email = ["sobol", ".", "daniil", "@", "gmail", ".", "com"] }
+    initialState = { post = "", post_addr = "", email = ["sobol", ".", "daniil", "@", "gmail", ".", "com"], colour = {r = 240, g = 240, b = 240} }
     commands = Cmd.batch [
+      Random.generate RandomColour colour_gen,
       Http.get {url = "../contents.yaml", expect = Http.expectString YamlLoaded}
       ]
   in
@@ -67,6 +66,8 @@ update msg model =
         Ok post_txt ->
           ({ model | post = post_txt }, Cmd.none)
         Err e -> (model, Cmd.none)
+    RandomColour colour ->
+      ({ model | colour = {r = cap_value (colour.r + model.colour.r), g = cap_value (colour.g + model.colour.g), b = (cap_value colour.b + model.colour.b)} }, Cmd.none)
     None -> (model, Cmd.none)
 
 view : Model -> Document Msg
@@ -75,7 +76,7 @@ view model = {title = "libportalnet", body = body model}
 body : Model -> List (Html msg)
 body model =
   [
-    Html.div bg_style [],
+    Html.div (bg_style model.colour) [],
     Html.div body_style
       [
         case
@@ -97,16 +98,19 @@ deadEndsToString deadEnds =
         |> List.map Markdown.deadEndToString
         |> String.join "\n"
 
-bg_style = [
-  Attr.style "background-color" "#f0f0f0",
+bg_style colour = [
+  Attr.style "background-color" (rgb255 colour.r colour.g colour.b |> toCssString),
   Attr.style "padding" "0",
   Attr.style "margin" "0",
+  Attr.style "display" "block",
+  Attr.style "position" "absolute",
+  Attr.style "top" "0",
+  Attr.style "left" "0",
   Attr.style "width" "100%",
   Attr.style "height" "100%",
-  Attr.style "display" "block",
-  Attr.style "position" "static",
   Attr.style "z-index" "-1"
   ]
+
 body_style = [
   Attr.style "padding" "20px",
   Attr.style "font-family" "monospace",
